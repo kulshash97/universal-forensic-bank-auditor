@@ -1,0 +1,15 @@
+# Sensitive Environment Secrets
+.env
+
+# Virtual Environment
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Local Data and Uploaded Files
+*.pdf
+*.xlsx
+*.png
+*.jpg
+*.jpeg
