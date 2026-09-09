@@ -121,7 +121,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
         raw_tx_blocks = []
 
         for page_text in raw_pages:
-            # Crop repeating footer / address headers
             parts = re.split(r'Page\s*No\s*\.?\s*:', page_text, flags=re.IGNORECASE)
             tx_area = parts[0]
             lines = [l.strip() for l in tx_area.split('\n') if l.strip()]
@@ -200,13 +199,11 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
         cleaned_page_texts = []
         for p_idx, page_raw in enumerate(raw_pages):
             t = page_raw
-            # Strip page 1 header metadata above the table
             if p_idx == 0:
                 p1_split = re.split(r'Txn\s*Date\s*Value\s*Date|Value\s*Date\s*Post\s*Date|Date\s+Narration', t, flags=re.IGNORECASE)
                 if len(p1_split) > 1:
                     t = p1_split[1]
 
-            # Strip repeating page headers and footers across all subsequent pages
             t = re.sub(r'OSBI|State Bank of India|Receive your statements by email.*?!', '', t, flags=re.IGNORECASE)
             t = re.sub(r'Txn\s*Date\s*Value\s*Date.*?Balance', '', t, flags=re.IGNORECASE)
             t = re.sub(r'Value\s*Date\s*Post\s*Date.*?Balance', '', t, flags=re.IGNORECASE)
@@ -252,7 +249,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             if amt <= 0:
                 continue
 
-            # First-Principle Balance Invariant
+            # First-Principle Balance Differential Invariant
             if running_bal is not None:
                 diff = round(current_bal - running_bal, 2)
                 t_type = "Credit" if diff > 0 else "Debit"
@@ -356,7 +353,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
     )
 
 def generate_audit_pdf(report: StatementAuditReport) -> bytes:
-    """Generates an executive-grade compliance audit report in PDF format."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -409,7 +405,6 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
         textColor=colors.HexColor('#0F172A')
     )
 
-    # 1. Header & Statutory Watermark
     elements.append(Paragraph("<b>KSP Consulting and Solutions</b>", brand_title_style))
     elements.append(Paragraph("<i>Complexity Simplified and Strategy Amplified</i>", brand_tagline_style))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#2563EB'), spaceAfter=6, spaceBefore=0))
@@ -421,7 +416,6 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
     ))
     elements.append(Spacer(1, 2))
 
-    # 2. Executive Metrics Summary Box
     summary_data = [
         ["Total Outflow (Debits)", "Total Inflow (Credits)", "Net Capital Movement", "Compliance Flags"],
         [f"Rs. {report.total_debit:,.2f}", f"Rs. {report.total_credit:,.2f}", f"Rs. {report.net_cashflow:,.2f}", str(report.suspicious_count)]
@@ -442,11 +436,9 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
     elements.append(summary_table)
     elements.append(Spacer(1, 8))
 
-    # 3. Executive Findings Assessment
     elements.append(Paragraph(f"<b>Executive Forensic Assessment:</b> {report.executive_summary}", body_style))
     elements.append(Spacer(1, 10))
 
-    # 4. Detailed Transaction Ledger
     headers = ["Date", "Description", "Type", "Amount (Rs.)", "Balance (Rs.)", "Category", "Compliance", "Forensic Audit Notes"]
     table_rows = [headers]
 
