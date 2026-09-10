@@ -8,6 +8,7 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import pypdf
+import streamlit as st
 
 # ReportLab imports for executive compliance reporting
 from reportlab.lib.pagesizes import A4, landscape
@@ -17,10 +18,15 @@ from reportlab.lib import colors
 
 load_dotenv()
 
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError("GEMINI_API_KEY missing in .env")
+# Safe API key retrieval from environment or Streamlit Secrets
+raw_api_key = os.getenv("GEMINI_API_KEY")
+if not raw_api_key and hasattr(st, "secrets"):
+    raw_api_key = st.secrets.get("GEMINI_API_KEY")
 
+if not raw_api_key:
+    raise ValueError("GEMINI_API_KEY missing in environment variables or Streamlit secrets.")
+
+api_key = str(raw_api_key).strip().strip("'").strip('"')
 client = genai.Client(api_key=api_key)
 
 class TransactionItem(BaseModel):
@@ -59,23 +65,23 @@ def clean_ascii(text: str) -> str:
 
 def categorize_universal(desc: str, t_type: str) -> str:
     d = desc.lower()
-    if any(k in d for k in ["groww", "zerodha", "mutual fund", "bse", "nse", "demat", "sebi"]):
+    if any(k in d for k in ["groww", "zerodha", "mutual fund", "bse", "nse", "demat", "sebi", "share"]):
         return "Investments & Capital"
-    elif any(k in d for k in ["irctc", "redbus", "apsrtc", "tsrtc", "uber", "ola", "rail", "indigo"]):
+    elif any(k in d for k in ["irctc", "redbus", "apsrtc", "tsrtc", "uber", "ola", "rail", "indigo", "air"]):
         return "Travel & Conveyance"
-    elif "cash deposit" in d or "dep cash" in d or "atm deposit" in d:
+    elif any(k in d for k in ["by cash", "cash deposit", "dep cash", "atm deposit"]):
         return "Cash Inflow"
     elif any(k in d for k in ["atw-", "atm wdl", "nwd-", "cash withdrawal", "cheque cash"]):
         return "Cash Outflow"
-    elif any(k in d for k in ["salary", "wfegs", "payroll"]):
+    elif any(k in d for k in ["salary", "wfegs", "payroll", "nirudyoga bruthi"]):
         return "Salary & Remuneration"
-    elif "interest" in d:
+    elif "interest" in d or "int. pd" in d or "int.pd" in d:
         return "Bank Interest"
-    elif any(k in d for k in ["cred", "onecard", "rblmycard", "bobcard"]):
+    elif any(k in d for k in ["cred", "onecard", "rblmycard", "bobcard", "credit card"]):
         return "Credit Card Liability"
-    elif any(k in d for k in ["airtel", "billdesk", "electricity", "southern", "jio", "water", "bescom"]):
+    elif any(k in d for k in ["airtel", "billdesk", "electricity", "southern", "jio", "water", "bescom", "bsnl"]):
         return "Utilities & Overheads"
-    elif any(k in d for k in ["lic", "pmjjby", "pmsby", "insurance", "hdfc life"]):
+    elif any(k in d for k in ["lic", "pmjjby", "pmsby", "insurance", "hdfc life", "max life"]):
         return "Statutory & Insurance"
     elif any(k in d for k in ["tax", "gst", "tds", "advance tax", "challan"]):
         return "Taxation & Statutory"
@@ -84,7 +90,7 @@ def categorize_universal(desc: str, t_type: str) -> str:
     return "Vendor & UPI Payments"
 
 def extract_pages_text(file_bytes: bytes, password: Optional[str] = None) -> List[str]:
-    """Extracts raw text page-by-page handling password protection."""
+    """Extracts raw text page-by-page handling password protection safely."""
     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
     if reader.is_encrypted:
         if password:
@@ -93,20 +99,27 @@ def extract_pages_text(file_bytes: bytes, password: Optional[str] = None) -> Lis
             try:
                 reader.decrypt("")
             except Exception:
-                raise ValueError("Password-protected statement. Please enter password in sidebar.")
+                raise ValueError("Password-protected statement. Please provide the statement password.")
     return [p.extract_text() or "" for p in reader.pages]
 
 def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str] = None) -> StatementAuditReport:
-    # Cryptographic SHA-256 Audit Fingerprint
     file_hash = hashlib.sha256(file_bytes).hexdigest()[:16].upper()
-    
-    raw_pages = extract_pages_text(file_bytes, password)
-    combined_header = "\n".join(raw_pages[:2])
+    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+    if reader.is_encrypted:
+        if password:
+            reader.decrypt(password)
+        else:
+            try:
+                reader.decrypt("")
+            except Exception:
+                raise ValueError("Password-protected statement. Please enter password in the sidebar.")
 
-    date_regex = (
-        r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|'
-        r'\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[- ]\d{2,4})\b'
-    )
+    raw_pages = [p.extract_text() or "" for p in reader.pages]
+    combined_header = "\n".join(raw_pages[:2]).upper()
+
+    # Detect bank statement layout
+    is_hdfc = "HDFC BANK" in combined_header
+    is_ubi = "UNION BANK" in combined_header or any("(DR)" in p.upper() or "(CR)" in p.upper() for p in raw_pages[:2])
 
     transactions = []
     total_debits = 0.0
@@ -114,9 +127,8 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
     opening_bal = 0.0
     closing_bal = 0.0
 
-    is_hdfc = "HDFC BANK" in combined_header.upper()
-
     if is_hdfc:
+        # Layout 1: HDFC Bank Multi-Page Table
         running_bal = None
         raw_tx_blocks = []
 
@@ -157,9 +169,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                 if len(dec_nums) >= 2:
                     amt = float(dec_nums[-2].replace(',', ''))
                     current_bal = float(dec_nums[-1].replace(',', ''))
-                elif len(dec_nums) == 1:
-                    amt = float(dec_nums[0].replace(',', ''))
-                    current_bal = running_bal if running_bal is not None else amt
                 else:
                     continue
 
@@ -177,9 +186,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             else:
                 total_debits += amt
 
-            clean_desc = re.sub(r'\d{2}/\d{2}/\d{2}', '', full_line)
-            clean_desc = re.sub(r'[\d,]+\.\d{2}', '', clean_desc)
-            clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
+            clean_desc = re.sub(r'\d{2}/\d{2}/\d{2}|[\d,]+\.\d{2}|\s+', ' ', full_line).strip()
 
             transactions.append(TransactionItem(
                 date=tx_date,
@@ -194,8 +201,45 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             ))
         closing_bal = running_bal if running_bal is not None else 0.0
 
+    elif is_ubi:
+        # Layout 2: Union Bank / Explicit Dr-Cr tag layout
+        for page in reader.pages:
+            lines = (page.extract_text() or "").split('\n')
+            for line in lines:
+                line_s = line.strip()
+                # Strict match on line start with DD-MM-YYYY and trailing (Dr)/(Cr) flags
+                m = re.match(r'^(\d{2}-\d{2}-\d{4})\s+(\S+)\s+(.*?)\s+([\d,]+\.\d{2})\s*\((Dr|Cr)\)\s+([\d,]+\.\d{2})\s*\((Cr|Dr)\)', line_s, re.IGNORECASE)
+                if m:
+                    d, tx_id, rem, amt_str, dr_cr, bal_str, _ = m.groups()
+                    amt = float(amt_str.replace(',', ''))
+                    bal = float(bal_str.replace(',', ''))
+                    t_type = "Debit" if dr_cr.upper() == "DR" else "Credit"
+
+                    if not transactions:
+                        opening_bal = round(bal + amt if t_type == "Debit" else bal - amt, 2)
+
+                    if t_type == "Credit":
+                        total_credits += amt
+                    else:
+                        total_debits += amt
+
+                    desc_text = f"{tx_id} {rem}".strip()
+                    transactions.append(TransactionItem(
+                        date=d,
+                        description=clean_ascii(desc_text[:85]),
+                        transaction_type=t_type,
+                        amount=round(amt, 2),
+                        running_balance=round(bal, 2),
+                        category=categorize_universal(desc_text, t_type),
+                        is_suspicious=False,
+                        compliance_tag="Compliant",
+                        audit_note="Verified ledger entry"
+                    ))
+
+        closing_bal = transactions[-1].running_balance if transactions else 0.0
+
     else:
-        # Multi-Bank Universal Engine (SBI, ICICI, Axis, Kotak, PNB, Canara, BoB)
+        # Layout 3: SBI / ICICI / Axis / Standard Multi-Column Running Balance
         cleaned_page_texts = []
         for p_idx, page_raw in enumerate(raw_pages):
             t = page_raw
@@ -213,9 +257,9 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             t = re.sub(r'Page\s*No\s*\.?\s*:\s*\d+', '', t, flags=re.IGNORECASE)
             cleaned_page_texts.append(t)
 
-        full_cleaned_ledger = "\n".join(cleaned_page_texts)
-        clean_ledger = re.split(r'Statement\s+Summary|Summary\s+of\s+Account|\*{4,}\s*End\s+of\s+Statement', full_cleaned_ledger, flags=re.IGNORECASE)[0]
-
+        full_cleaned = "\n".join(cleaned_page_texts)
+        clean_ledger = re.split(r'Statement\s+Summary|Summary\s+of\s+Account|\*{4,}\s*End\s+of\s+Statement', full_cleaned, flags=re.IGNORECASE)[0]
+        date_regex = r'\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[- ]\d{2,4})\b'
         pattern = re.compile(rf'({date_regex}(?:\s+{date_regex})?)(.*?)(?=(?:{date_regex}(?:\s+{date_regex})?)|\Z)', re.DOTALL | re.IGNORECASE)
         matches = pattern.findall(clean_ledger)
 
@@ -236,20 +280,20 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                     amt_line = l
                     break
 
-            nums = re.findall(r'[\d,]+\.\d{2}', amt_line)
+            # Match valid standalone currency amounts (avoids alphanumeric strings like 'santhosh07.318')
+            nums = re.findall(r'(?:^|\s)([\d,]+\.\d{2})(?=\s|$|\()', amt_line)
+            if len(nums) < 2:
+                nums = re.findall(r'[\d,]+\.\d{2}', amt_line)
+
             if len(nums) >= 2:
-                amt = float(nums[0].replace(',', ''))
-                current_bal = float(nums[1].replace(',', ''))
-            elif len(nums) == 1:
-                amt = float(nums[0].replace(',', ''))
-                current_bal = running_bal if running_bal is not None else amt
+                amt = float(nums[-2].replace(',', ''))
+                current_bal = float(nums[-1].replace(',', ''))
             else:
                 continue
 
             if amt <= 0:
                 continue
 
-            # First-Principle Balance Differential Invariant
             if running_bal is not None:
                 diff = round(current_bal - running_bal, 2)
                 t_type = "Credit" if diff > 0 else "Debit"
@@ -282,7 +326,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             ))
         closing_bal = running_bal if running_bal is not None else 0.0
 
-    # Statutory Compliance Audit Intelligence
+    # Statutory Compliance Audit Flags
     seen_debits = {}
     flagged_count = 0
 
@@ -297,6 +341,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             else:
                 seen_debits[debit_key] = True
 
+        # Section 269ST / High-value cash tracking
         if "cash" in t.category.lower() and t.amount >= 10000.0:
             t.is_suspicious = True
             t.compliance_tag = "Sec 269ST / 40A(3)"
@@ -310,13 +355,14 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
         elif t.amount >= 25000.0 and t.amount % 5000 == 0:
             t.is_suspicious = True
             t.compliance_tag = "Audit Scrutiny"
-            t.audit_note = f"Unrounded high lump-sum movement (Rs.{t.amount:,.2f})"
+            t.audit_note = f"Round lump-sum movement (Rs.{t.amount:,.2f})"
             flagged_count += 1
 
     net_movement = round(total_credits - total_debits, 2)
     reconciled = (abs(round((opening_bal + total_credits - total_debits), 2) - round(closing_bal, 2)) < 1.0) if opening_bal else True
     rec_status = "100% Mathematically Reconciled" if reconciled else "Audit Reconciled (Active Settlement Drift)"
 
+    # Gemini summary generation
     header_snippet = clean_ascii(combined_header[:1800])
     prompt = (
         f"Universal statement audited.\n"
