@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import io
 import re
-from auditor import analyze_statement, generate_audit_pdf
+from auditor import analyze_statement, generate_audit_pdf, generate_tally_xml
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 st.set_page_config(
     page_title="KSP Consulting and Solutions | Compliance & Audit Suite",
@@ -24,7 +28,7 @@ tab_audit, tab_onboard, tab_validator, tab_pitch = st.tabs([
 ])
 
 # ==============================================================================
-# TAB 1: UNIVERSAL BANK STATEMENT AUDITOR (Your Proven Engine)
+# TAB 1: UNIVERSAL BANK STATEMENT AUDITOR
 # ==============================================================================
 with tab_audit:
     col_up1, col_up2 = st.columns([2, 1])
@@ -114,16 +118,15 @@ with tab_audit:
 
         st.dataframe(filtered_df, use_container_width=True)
 
-        # Export Client Deliverables
+        # Export Client Deliverables (PDF, Excel, Tally XML)
         st.markdown("### Export Client Deliverables")
-        col_pdf, col_excel = st.columns(2)
-
+        col_pdf, col_excel, col_tally = st.columns(3)
         safe_name = re.sub(r'[^a-zA-Z0-9]', '_', report.account_holder_or_bank)
 
         with col_pdf:
             pdf_data = generate_audit_pdf(report)
             st.download_button(
-                label="📄 Download KSP Compliance Audit Report (.PDF)",
+                label="📄 Compliance Audit Report (.PDF)",
                 data=pdf_data,
                 file_name=f"KSP_Compliance_Audit_{safe_name}.pdf",
                 mime="application/pdf",
@@ -138,11 +141,22 @@ with tab_audit:
             excel_data = output.getvalue()
 
             st.download_button(
-                label="📊 Download Raw Audit Ledger (.XLSX)",
+                label="📊 Raw Audit Ledger (.XLSX)",
                 data=excel_data,
                 file_name=f"KSP_Ledger_{safe_name}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
+            )
+
+        with col_tally:
+            tally_xml_str = generate_tally_xml(report, bank_ledger_name=report.account_holder_or_bank)
+            st.download_button(
+                label="💾 Tally Prime Import (.XML)",
+                data=tally_xml_str,
+                file_name=f"Tally_Import_{safe_name}.xml",
+                mime="application/xml",
+                use_container_width=True,
+                help="Ready for 1-click ingestion via Tally Prime > Import > Transactions"
             )
 
 
@@ -164,7 +178,7 @@ with tab_onboard:
             "title": "GST Registration: Sole Proprietorship (GSTN Portal)",
             "primary_docs": [
                 "PAN Card of the Proprietor",
-                "Identity & Address Proof of Proprietor (Voter ID / Passport / Driving License / [Aadhaar Redacted])",
+                "Identity & Address Proof of Proprietor (Voter ID / Passport / Driving License / Redacted UIDAI document)",
                 "Passport Size Photograph of Proprietor (< 100 KB, JPEG)",
             ],
             "premise_docs": [
@@ -285,14 +299,12 @@ with tab_validator:
     def validate_compliance_document(file_name: str, file_size: int, doc_category: str):
         results = {"passed": True, "errors": [], "warnings": [], "actionables": []}
 
-        # Size threshold check (portal restrictions)
         max_size = 500 * 1024 if ("Utility" in doc_category or "Cheque" in doc_category) else 2 * 1024 * 1024
         if file_size > max_size:
             results["passed"] = False
             results["errors"].append(f"File size exceeds portal limit ({file_size / 1024:.1f} KB > {max_size / 1024:.0f} KB).")
             results["actionables"].append("Compress PDF resolution below portal threshold using DPI downsampling.")
 
-        # Document-specific rules
         if "Utility" in doc_category:
             results["warnings"].append("Utility bill reading date must fall within the last 60 days.")
             results["actionables"].append("Ensure property owner's name and consumer number on the bill match the lease NOC verbatim.")
@@ -363,7 +375,7 @@ with tab_pitch:
     metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
     metric_col1.metric("Audit Time Saved", "85%", "12 hrs ➔ 1.5 hrs")
     metric_col2.metric("Portal Rejection Rate", "0%", "-100% Errors")
-    metric_col3.metric("Avg. Client Fee Capacity", "₹10,000/mo", "+₹5,000 Delta")
+    metric_col3.metric("Avg. Client Fee Capacity", "Rs. 10,000/mo", "+Rs. 5,000 Delta")
     metric_col4.metric("Turnaround Velocity", "< 15 Mins", "Same-Day Delivery")
 
     st.markdown("### Client Pitch Script for Financial Advisors")
@@ -375,4 +387,121 @@ with tab_pitch:
         underwriting-ready financials for your banking and credit needs."
         """,
         language="text"
+    )
+
+    # In-App 1-Page Commercial Proposal PDF Generator
+    st.markdown("---")
+    st.subheader("📑 Client Engagement Dossier")
+    st.write("Download the official 1-page commercial agreement to share with CA firms or business owners.")
+
+    def get_proposal_pdf_bytes() -> bytes:
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            rightMargin=28,
+            leftMargin=28,
+            topMargin=24,
+            bottomMargin=24
+        )
+        elements = []
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle('T1', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold', spaceAfter=2)
+        tagline_style = ParagraphStyle('T2', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold', spaceAfter=6)
+        sec_style = ParagraphStyle('S1', parent=styles['Heading2'], fontSize=9.5, leading=12.5, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=2)
+        body_style = ParagraphStyle('B1', parent=styles['Normal'], fontSize=7.6, leading=10.5, textColor=colors.HexColor('#334155'))
+        bullet_style = ParagraphStyle('BL1', parent=styles['Normal'], fontSize=7.4, leading=9.8, textColor=colors.HexColor('#1E293B'))
+        meta_label = ParagraphStyle('ML1', parent=styles['Normal'], fontSize=7.2, leading=9.5, textColor=colors.HexColor('#64748B'), fontName='Helvetica-Bold')
+        meta_val = ParagraphStyle('MV1', parent=styles['Normal'], fontSize=7.5, leading=9.5, textColor=colors.HexColor('#0F172A'))
+        t_cell = ParagraphStyle('TC1', parent=styles['Normal'], fontSize=7.4, leading=9.2, textColor=colors.HexColor('#0F172A'))
+        t_head = ParagraphStyle('TH1', parent=styles['Normal'], fontSize=7.6, leading=9.8, textColor=colors.white, fontName='Helvetica-Bold')
+
+        elements.append(Paragraph("KSP CONSULTING AND SOLUTIONS", title_style))
+        elements.append(Paragraph("COMPLEXITY SIMPLIFIED AND STRATEGY AMPLIFIED", tagline_style))
+        elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#2563EB'), spaceBefore=1, spaceAfter=5))
+
+        meta_data = [
+            [Paragraph("<b>Proposal Type:</b>", meta_label), Paragraph("Autonomous Forensic Audit Desk & Statutory Clearance Retainer", meta_val), Paragraph("<b>Date:</b>", meta_label), Paragraph("September 12, 2026", meta_val)],
+            [Paragraph("<b>Prepared For:</b>", meta_label), Paragraph("[CA Firm Name / Client Business Name]", meta_val), Paragraph("<b>Service Tier:</b>", meta_label), Paragraph("Monthly Forensic Retainer (Enterprise Speed)", meta_val)],
+            [Paragraph("<b>Attention:</b>", meta_label), Paragraph("[Managing Partner / Director / Finance Head]", meta_val), Paragraph("<b>Location:</b>", meta_label), Paragraph("Hyderabad, India", meta_val)]
+        ]
+        t_meta = Table(meta_data, colWidths=[70, 210, 65, 195])
+        t_meta.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'LEFT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('TOPPADDING', (0,0), (-1,-1), 1.2), ('BOTTOMPADDING', (0,0), (-1,-1), 1.2), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
+        elements.append(t_meta)
+        elements.append(Spacer(1, 3))
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1'), spaceBefore=1, spaceAfter=3))
+
+        elements.append(Paragraph("Executive Overview", sec_style))
+        elements.append(Paragraph(
+            "Manual extraction, reconciliation, and compliance vetting of complex, multi-page bank statements (50-100+ pages) consumes 12-18 article assistant billable hours per client file. Unreconciled balance drifts, uncaught duplicate debits, and missed Section 269ST/40A(3) cash limits pose severe tax audit and statutory disallowance risks. <b>KSP Consulting and Solutions</b> provides an automated, institutional-grade Forensic Audit Desk. We process raw, heterogeneous banking PDFs (SBI, HDFC, ICICI, Union Bank, Axis, etc.) and deliver 100% mathematically verified ledgers and certified risk exception reports within 2 hours of receipt.",
+            body_style
+        ))
+        elements.append(Spacer(1, 3))
+
+        elements.append(Paragraph("Scope of Deliverables (Included in Monthly Retainer)", sec_style))
+        deliverables = [
+            "<b>100% Reconciled ERP-Ready Ledgers (.XLSX):</b> Standardized, normalized ledgers mapped to your chart of accounts, ready for instant import into Tally, Zoho Books, or SAP with zero manual data entry.",
+            "<b>Section 269ST & 40A(3) Cash Risk Flags:</b> Automated tagging of cash receipts &ge; Rs. 2,00,000 (attracting 100% statutory penalties under Section 271DA) and business cash expenditures exceeding statutory disallowance limits.",
+            "<b>AML & Large Transaction Scrutiny:</b> Isolation of unrounded lump-sum movements &ge; Rs. 50,000 and suspicious round transfers for tax audit defense.",
+            "<b>Operational Leakage & Duplicate Detection:</b> Detection of accidental duplicate vendor debits and recurring unexplained bank charges.",
+            "<b>Cryptographic Audit Certificate (.PDF):</b> Executive-branded PDF deliverable with SHA-256 digital fingerprint and reconciliation certificate for tax authorities, statutory auditors, and lenders."
+        ]
+        for d in deliverables:
+            elements.append(Paragraph(f"• {d}", bullet_style))
+            elements.append(Spacer(1, 1.2))
+        elements.append(Spacer(1, 2))
+
+        elements.append(Paragraph("Commercial Retainer Structure", sec_style))
+        table_rows = [
+            [Paragraph("Retainer Package", t_head), Paragraph("Volume Allocation", t_head), Paragraph("Turnaround SLA", t_head), Paragraph("Monthly Fee", t_head)],
+            [Paragraph("<b>CA Firm Audit Desk</b>", t_cell), Paragraph("Up to 8 Complex Client Statements / Month<br/>(up to 500 pages total)", t_cell), Paragraph("Under 2 Hours", t_cell), Paragraph("<b>Rs. 10,000 / mo</b>", t_cell)],
+            [Paragraph("<b>Growth Retainer</b>", t_cell), Paragraph("Up to 18 Complex Client Statements / Month", t_cell), Paragraph("Under 2 Hours", t_cell), Paragraph("<b>Rs. 20,000 / mo</b>", t_cell)],
+            [Paragraph("<b>Ad-Hoc Complex Dossier</b>", t_cell), Paragraph("Single Entity (Yearly Bank Audit, up to 60 pages)", t_cell), Paragraph("Same-Day (4 Hours)", t_cell), Paragraph("<b>Rs. 1,500 / statement</b>", t_cell)]
+        ]
+        t_price = Table(table_rows, colWidths=[130, 200, 105, 105])
+        t_price.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0F172A')),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 3.5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3.5),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ('RIGHTPADDING', (0,0), (-1,-1), 6),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#FFFFFF')),
+            ('BACKGROUND', (0,2), (-1,2), colors.HexColor('#F8FAFC')),
+            ('BACKGROUND', (0,3), (-1,3), colors.HexColor('#FFFFFF')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ]))
+        elements.append(t_price)
+        elements.append(Spacer(1, 3))
+
+        elements.append(Paragraph("Data Security & Confidentiality SLA", sec_style))
+        elements.append(Paragraph("• <b>Local Processing & Strict Non-Disclosure:</b> All files are processed under strict client-confidentiality protocols.", bullet_style))
+        elements.append(Paragraph("• <b>Zero Model Training:</b> Client financial data is analyzed strictly in runtime memory and is never used to train public machine-learning models.", bullet_style))
+        elements.append(Spacer(1, 3))
+
+        elements.append(Paragraph("Acceptance & Onboarding", sec_style))
+        elements.append(Paragraph("To initiate this retainer or schedule your complimentary trial audit on a live 50+ page statement:", body_style))
+        elements.append(Spacer(1, 4))
+
+        sign_data = [
+            [Paragraph("<b>Accepted By:</b> ___________________________", body_style), Paragraph("<b>Designation:</b> ___________________________", body_style)],
+            [Paragraph("<b>Date:</b> ___________________________", body_style), Paragraph("<b>Contact:</b> KSP Consulting & Solutions | Hyderabad", body_style)]
+        ]
+        t_sign = Table(sign_data, colWidths=[270, 270])
+        t_sign.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'LEFT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('TOPPADDING', (0,0), (-1,-1), 1.5), ('BOTTOMPADDING', (0,0), (-1,-1), 1.5), ('LEFTPADDING', (0,0), (-1,-1), 0)]))
+        elements.append(t_sign)
+
+        doc.build(elements)
+        return buf.getvalue()
+
+    proposal_pdf_bytes = get_proposal_pdf_bytes()
+    st.download_button(
+        label="📥 Download Official KSP Commercial Retainer Proposal (.PDF)",
+        data=proposal_pdf_bytes,
+        file_name="KSP_Commercial_Proposal.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=True
     )

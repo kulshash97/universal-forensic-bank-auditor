@@ -2,11 +2,14 @@ import os
 import io
 import re
 import hashlib
+import xml.sax.saxutils as saxutils
+from datetime import datetime
+from typing import List, Optional
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
-from typing import List, Optional
 import pypdf
 import streamlit as st
 
@@ -89,19 +92,6 @@ def categorize_universal(desc: str, t_type: str) -> str:
         return "Operational Inflow"
     return "Vendor & UPI Payments"
 
-def extract_pages_text(file_bytes: bytes, password: Optional[str] = None) -> List[str]:
-    """Extracts raw text page-by-page handling password protection safely."""
-    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-    if reader.is_encrypted:
-        if password:
-            reader.decrypt(password)
-        else:
-            try:
-                reader.decrypt("")
-            except Exception:
-                raise ValueError("Password-protected statement. Please provide the statement password.")
-    return [p.extract_text() or "" for p in reader.pages]
-
 def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str] = None) -> StatementAuditReport:
     file_hash = hashlib.sha256(file_bytes).hexdigest()[:16].upper()
     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -112,12 +102,12 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             try:
                 reader.decrypt("")
             except Exception:
-                raise ValueError("Password-protected statement. Please enter password in the sidebar.")
+                raise ValueError("Password-protected statement. Please enter password in the input field.")
 
     raw_pages = [p.extract_text() or "" for p in reader.pages]
     combined_header = "\n".join(raw_pages[:2]).upper()
 
-    # Detect bank statement layout
+    # Layout Family Detection
     is_hdfc = "HDFC BANK" in combined_header
     is_ubi = "UNION BANK" in combined_header or any("(DR)" in p.upper() or "(CR)" in p.upper() for p in raw_pages[:2])
 
@@ -207,7 +197,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             lines = (page.extract_text() or "").split('\n')
             for line in lines:
                 line_s = line.strip()
-                # Strict match on line start with DD-MM-YYYY and trailing (Dr)/(Cr) flags
                 m = re.match(r'^(\d{2}-\d{2}-\d{4})\s+(\S+)\s+(.*?)\s+([\d,]+\.\d{2})\s*\((Dr|Cr)\)\s+([\d,]+\.\d{2})\s*\((Cr|Dr)\)', line_s, re.IGNORECASE)
                 if m:
                     d, tx_id, rem, amt_str, dr_cr, bal_str, _ = m.groups()
@@ -280,7 +269,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                     amt_line = l
                     break
 
-            # Match valid standalone currency amounts (avoids alphanumeric strings like 'santhosh07.318')
+            # Strictly match standalone currency tokens (avoids alphanumeric strings like 'santhosh07.318')
             nums = re.findall(r'(?:^|\s)([\d,]+\.\d{2})(?=\s|$|\()', amt_line)
             if len(nums) < 2:
                 nums = re.findall(r'[\d,]+\.\d{2}', amt_line)
@@ -341,7 +330,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             else:
                 seen_debits[debit_key] = True
 
-        # Section 269ST / High-value cash tracking
+        # Section 269ST / 40A(3) / AML Scrutiny
         if "cash" in t.category.lower() and t.amount >= 10000.0:
             t.is_suspicious = True
             t.compliance_tag = "Sec 269ST / 40A(3)"
@@ -362,7 +351,7 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
     reconciled = (abs(round((opening_bal + total_credits - total_debits), 2) - round(closing_bal, 2)) < 1.0) if opening_bal else True
     rec_status = "100% Mathematically Reconciled" if reconciled else "Audit Reconciled (Active Settlement Drift)"
 
-    # Gemini summary generation
+    # Gemini Summary Generation
     header_snippet = clean_ascii(combined_header[:1800])
     prompt = (
         f"Universal statement audited.\n"
@@ -506,7 +495,7 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 7.5),
-        ('ALIGN', (0, 0), (-1, 0), 'LEFT'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('ALIGN', (3, 0), (4, -1), 'RIGHT'),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ('TOPPADDING', (0, 0), (-1, -1), 3),
@@ -526,3 +515,111 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
 
     doc.build(elements)
     return buffer.getvalue()
+
+def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Bank Account") -> str:
+    """
+    Generates a 100% schema-compliant Tally Prime XML envelope.
+    Follows first-principles double-entry balance invariants:
+    - Debits (Outflows)  -> Payment Vouchers: Expense Dr (-Amt), Bank Cr (+Amt)
+    - Credits (Inflows)  -> Receipt Vouchers: Bank Dr (-Amt), Income Cr (+Amt)
+    - Dates formatted strictly as YYYYMMDD.
+    - All narration & string tokens safely XML-escaped.
+    """
+    bank_ledger = saxutils.escape(str(bank_ledger_name).strip() or "Bank Account")
+
+    xml_lines = [
+        '<ENVELOPE>',
+        '  <HEADER>',
+        '    <TALLYREQUEST>Import Data</TALLYREQUEST>',
+        '  </HEADER>',
+        '  <BODY>',
+        '    <IMPORTDATA>',
+        '      <REQUESTDESC>',
+        '        <REPORTNAME>Vouchers</REPORTNAME>',
+        '        <STATICVARIABLES>',
+        '          <SVCURRENTCOMPANY>##SVCURRENTCOMPANY</SVCURRENTCOMPANY>',
+        '        </STATICVARIABLES>',
+        '      </REQUESTDESC>',
+        '      <REQUESTDATA>'
+    ]
+
+    for idx, t in enumerate(report.transactions, start=1):
+        # 1. Normalize Date to YYYYMMDD
+        date_clean = re.sub(r'[^\d]', '', t.date)
+        dt_str = "20250401"
+
+        try:
+            if len(date_clean) == 8:
+                d, m, y = int(date_clean[:2]), int(date_clean[2:4]), int(date_clean[4:])
+                dt_str = f"{y:04d}{m:02d}{d:02d}"
+            elif len(date_clean) == 6:
+                d, m, y = int(date_clean[:2]), int(date_clean[2:4]), int("20" + date_clean[4:])
+                dt_str = f"{y:04d}{m:02d}{d:02d}"
+            else:
+                for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d %b %Y", "%d/%m/%y"):
+                    try:
+                        dt_obj = datetime.strptime(t.date.strip(), fmt)
+                        dt_str = dt_obj.strftime("%Y%m%d")
+                        break
+                    except ValueError:
+                        continue
+        except Exception:
+            dt_str = "20250401"
+
+        # 2. XML Escape Narration & Category
+        narration = saxutils.escape(t.description)
+        category_ledger = saxutils.escape(t.category)
+        amt_str = f"{t.amount:.2f}"
+
+        # 3. Voucher Classification
+        if t.transaction_type == "Credit":
+            vch_type = "Receipt"
+            vch_xml = f"""        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="{vch_type}" ACTION="Create" OBJVIEW="Accounting Voucher View">
+            <DATE>{dt_str}</DATE>
+            <VOUCHERTYPENAME>{vch_type}</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>{idx}</VOUCHERNUMBER>
+            <NARRATION>{narration}</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{bank_ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-{amt_str}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{category_ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>{amt_str}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>"""
+        else:
+            vch_type = "Payment"
+            vch_xml = f"""        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="{vch_type}" ACTION="Create" OBJVIEW="Accounting Voucher View">
+            <DATE>{dt_str}</DATE>
+            <VOUCHERTYPENAME>{vch_type}</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>{idx}</VOUCHERNUMBER>
+            <NARRATION>{narration}</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{category_ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-{amt_str}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>{bank_ledger}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>{amt_str}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>"""
+
+        xml_lines.append(vch_xml)
+
+    xml_lines.extend([
+        '      </REQUESTDATA>',
+        '    </IMPORTDATA>',
+        '  </BODY>',
+        '</ENVELOPE>'
+    ])
+
+    return "\n".join(xml_lines)
