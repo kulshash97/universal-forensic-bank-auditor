@@ -6,3 +6,11 @@ openpyxl>=3.1.2
 pypdf>=4.2.0
 reportlab>=4.2.0
 pydantic>=2.7.0
+streamlit
+pandas
+openpyxl
+pypdf
+reportlab
+google-genai
+pydantic
+python-dotenv

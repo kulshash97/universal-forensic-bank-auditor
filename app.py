@@ -490,14 +490,12 @@ with tab_consultant:
         st.markdown(f"## 📋 {cr.project_title}")
         st.info(f"**Strategic Summary:** {cr.executive_summary}")
 
-        # Core Metrics Strip
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         col_m1.metric("Corporate Vehicle", cr.legal_compliance.entity_structure)
         col_m2.metric("Estimated CAPEX", cr.financial_forecast.estimated_initial_capex)
         col_m3.metric("Monthly OPEX", cr.financial_forecast.monthly_opex_runway)
         col_m4.metric("Projected ROI", cr.financial_forecast.projected_roi)
 
-        # 4 Pillar Display Accordions
         p1, p2 = st.columns(2)
         with p1:
             st.markdown("### ⚖️ 1. Legal Requirements & Compliance")
@@ -524,7 +522,6 @@ with tab_consultant:
             st.write(f"• **Break-Even Timeline:** {cr.financial_forecast.break_even_timeline}")
             st.write(f"• **Revenue Strategies:** {', '.join(cr.financial_forecast.revenue_streams)}")
 
-        # Downloadable PDF Action
         st.markdown("---")
         st.subheader("📑 Client Strategic Dossier Export")
         st.write("Convert this dynamic analysis into a branded, single-page executive PDF report.")

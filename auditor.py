@@ -631,9 +631,6 @@ def run_mini_consultant(business_query: str, region: str = "India / Telangana") 
     return response.parsed
 
 def generate_ai_consultant_pdf(report: MiniConsultantReport) -> bytes:
-    """
-    Builds a professional 1-to-2 page executive strategic briefing in ReportLab.
-    """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -707,3 +704,11 @@ def generate_ai_consultant_pdf(report: MiniConsultantReport) -> bytes:
 
     doc.build(elements)
     return buf.getvalue()
+
+__all__ = [
+    "analyze_statement",
+    "generate_audit_pdf",
+    "generate_tally_xml",
+    "run_mini_consultant",
+    "generate_ai_consultant_pdf"
+]
