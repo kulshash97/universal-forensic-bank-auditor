@@ -69,7 +69,7 @@ class StatementAuditReport(BaseModel):
     transactions: List[TransactionItem]
 
 # ------------------------------------------------------------------------------
-# MINI-AI CONSULTANT 4-PILLAR SCHEMAS (GEMINI-3.1-PRO-PREVIEW)
+# MINI-AI CONSULTANT 4-PILLAR SCHEMAS (FREE-TIER COMPATIBLE)
 # ------------------------------------------------------------------------------
 class LegalCompliancePillar(BaseModel):
     entity_structure: str = Field(description="Recommended corporate vehicle (e.g., Private Limited, LLP, OPC)")
@@ -602,7 +602,7 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
     return "\n".join(xml_lines)
 
 # ------------------------------------------------------------------------------
-# MINI-AI CONSULTANT ENGINE (GEMINI-3.1-PRO-PREVIEW)
+# MINI-AI CONSULTANT ENGINE (GEMINI-2.5-FLASH COMPATIBLE WITH FALLBACK)
 # ------------------------------------------------------------------------------
 def run_mini_consultant(business_query: str, region: str = "India / Telangana") -> MiniConsultantReport:
     system_instruction = (
@@ -618,17 +618,27 @@ def run_mini_consultant(business_query: str, region: str = "India / Telangana") 
 
     user_prompt = f"Target Jurisdiction: {region}\nBusiness Query & Concept: {clean_ascii(business_query)}"
 
-    response = client.models.generate_content(
-        model="gemini-3.1-pro-preview",
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=MiniConsultantReport,
-            temperature=0.2,
-            system_instruction=system_instruction
-        )
-    )
-    return response.parsed
+    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    last_exception = None
+
+    for model_name in candidate_models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=MiniConsultantReport,
+                    temperature=0.2,
+                    system_instruction=system_instruction
+                )
+            )
+            return response.parsed
+        except Exception as e:
+            last_exception = e
+            continue
+
+    raise last_exception
 
 def generate_ai_consultant_pdf(report: MiniConsultantReport) -> bytes:
     buf = io.BytesIO()
