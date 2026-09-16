@@ -69,7 +69,7 @@ class StatementAuditReport(BaseModel):
     transactions: List[TransactionItem]
 
 # ------------------------------------------------------------------------------
-# MINI-AI CONSULTANT 4-PILLAR SCHEMAS (GEMINI-2.5-PRO)
+# MINI-AI CONSULTANT 4-PILLAR SCHEMAS (GEMINI-3.1-PRO-PREVIEW)
 # ------------------------------------------------------------------------------
 class LegalCompliancePillar(BaseModel):
     entity_structure: str = Field(description="Recommended corporate vehicle (e.g., Private Limited, LLP, OPC)")
@@ -602,7 +602,7 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
     return "\n".join(xml_lines)
 
 # ------------------------------------------------------------------------------
-# MINI-AI CONSULTANT ENGINE (GEMINI-2.5-PRO)
+# MINI-AI CONSULTANT ENGINE (GEMINI-3.1-PRO-PREVIEW)
 # ------------------------------------------------------------------------------
 def run_mini_consultant(business_query: str, region: str = "India / Telangana") -> MiniConsultantReport:
     system_instruction = (
@@ -619,7 +619,7 @@ def run_mini_consultant(business_query: str, region: str = "India / Telangana") 
     user_prompt = f"Target Jurisdiction: {region}\nBusiness Query & Concept: {clean_ascii(business_query)}"
 
     response = client.models.generate_content(
-        model="gemini-2.5-pro",
+        model="gemini-3.1-pro-preview",
         contents=user_prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
