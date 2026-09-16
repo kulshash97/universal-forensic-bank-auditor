@@ -18,13 +18,13 @@ from pydantic import BaseModel, Field
 import pypdf
 import streamlit as st
 
-# ReportLab imports for executive compliance reporting & venture blueprints
+# ReportLab imports for audit & consulting reports
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# Safe API key retrieval from environment or Streamlit Secrets
+# API Key Discovery
 raw_api_key = os.getenv("GEMINI_API_KEY")
 if not raw_api_key and hasattr(st, "secrets"):
     raw_api_key = st.secrets.get("GEMINI_API_KEY")
@@ -35,6 +35,9 @@ if not raw_api_key:
 api_key = str(raw_api_key).strip().strip("'").strip('"')
 client = genai.Client(api_key=api_key)
 
+# ------------------------------------------------------------------------------
+# AUDIT & RECONCILIATION SCHEMAS
+# ------------------------------------------------------------------------------
 class TransactionItem(BaseModel):
     date: str
     description: str
@@ -65,8 +68,42 @@ class StatementAuditReport(BaseModel):
     executive_summary: str
     transactions: List[TransactionItem]
 
+# ------------------------------------------------------------------------------
+# MINI-AI CONSULTANT 4-PILLAR SCHEMAS (GEMINI-2.5-PRO)
+# ------------------------------------------------------------------------------
+class LegalCompliancePillar(BaseModel):
+    entity_structure: str = Field(description="Recommended corporate vehicle (e.g., Private Limited, LLP, OPC)")
+    mandatory_licenses: List[str] = Field(description="Mandatory regulatory registrations, permits, trade licenses")
+    tax_statutory_mandates: List[str] = Field(description="GST, PAN/TAN, TDS, Professional Tax, and labor acts")
+
+class GovSchemeItem(BaseModel):
+    scheme_name: str
+    eligibility: str
+    subsidy_benefits: str
+
+class ImplementationPhase(BaseModel):
+    phase_title: str = Field(description="e.g., Phase 1: Prototype & Incorporation (Months 0-2)")
+    action_milestones: List[str]
+
+class FinancialForecastPillar(BaseModel):
+    estimated_initial_capex: str
+    monthly_opex_runway: str
+    break_even_timeline: str
+    projected_roi: str
+    revenue_streams: List[str]
+
+class MiniConsultantReport(BaseModel):
+    project_title: str
+    executive_summary: str
+    legal_compliance: LegalCompliancePillar
+    government_schemes: List[GovSchemeItem]
+    implementation_blueprint: List[ImplementationPhase]
+    financial_forecast: FinancialForecastPillar
+
+# ------------------------------------------------------------------------------
+# TEXT & CATEGORIZATION HELPERS
+# ------------------------------------------------------------------------------
 def clean_ascii(text: str) -> str:
-    """Sanitizes text to safe ASCII for clean ReportLab rendering."""
     return re.sub(r'[^\x20-\x7E]', ' ', str(text)).strip()
 
 def categorize_universal(desc: str, t_type: str) -> str:
@@ -95,6 +132,9 @@ def categorize_universal(desc: str, t_type: str) -> str:
         return "Operational Inflow"
     return "Vendor & UPI Payments"
 
+# ------------------------------------------------------------------------------
+# AUDITOR PARSER
+# ------------------------------------------------------------------------------
 def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str] = None) -> StatementAuditReport:
     file_hash = hashlib.sha256(file_bytes).hexdigest()[:16].upper()
     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -110,7 +150,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
     raw_pages = [p.extract_text() or "" for p in reader.pages]
     combined_header = "\n".join(raw_pages[:2]).upper()
 
-    # Layout Family Detection
     is_hdfc = "HDFC BANK" in combined_header
     is_ubi = "UNION BANK" in combined_header or any("(DR)" in p.upper() or "(CR)" in p.upper() for p in raw_pages[:2])
 
@@ -121,15 +160,12 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
     closing_bal = 0.0
 
     if is_hdfc:
-        # Layout 1: HDFC Bank Multi-Page Table
         running_bal = None
         raw_tx_blocks = []
-
         for page_text in raw_pages:
             parts = re.split(r'Page\s*No\s*\.?\s*:', page_text, flags=re.IGNORECASE)
             tx_area = parts[0]
             lines = [l.strip() for l in tx_area.split('\n') if l.strip()]
-
             cur_block = []
             for line in lines:
                 if "Date Narration" in line or "Withdrawal Amt" in line:
@@ -173,14 +209,12 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                 opening_bal = round(current_bal - amt if t_type == "Credit" else current_bal + amt, 2)
 
             running_bal = current_bal
-
             if t_type == "Credit":
                 total_credits += amt
             else:
                 total_debits += amt
 
             clean_desc = re.sub(r'\d{2}/\d{2}/\d{2}|[\d,]+\.\d{2}|\s+', ' ', full_line).strip()
-
             transactions.append(TransactionItem(
                 date=tx_date,
                 description=clean_ascii(clean_desc[:85]),
@@ -195,7 +229,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
         closing_bal = running_bal if running_bal is not None else 0.0
 
     elif is_ubi:
-        # Layout 2: Union Bank / Explicit Dr-Cr tag layout
         for page in reader.pages:
             lines = (page.extract_text() or "").split('\n')
             for line in lines:
@@ -209,7 +242,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
 
                     if not transactions:
                         opening_bal = round(bal + amt if t_type == "Debit" else bal - amt, 2)
-
                     if t_type == "Credit":
                         total_credits += amt
                     else:
@@ -227,11 +259,9 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                         compliance_tag="Compliant",
                         audit_note="Verified ledger entry"
                     ))
-
         closing_bal = transactions[-1].running_balance if transactions else 0.0
 
     else:
-        # Layout 3: SBI / ICICI / Axis / Standard Multi-Column Running Balance
         cleaned_page_texts = []
         for p_idx, page_raw in enumerate(raw_pages):
             t = page_raw
@@ -294,7 +324,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                 opening_bal = round(current_bal - amt if t_type == "Credit" else current_bal + amt, 2)
 
             running_bal = current_bal
-
             if t_type == "Credit":
                 total_credits += amt
             else:
@@ -317,10 +346,8 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             ))
         closing_bal = running_bal if running_bal is not None else 0.0
 
-    # Statutory Compliance Audit Flags
     seen_debits = {}
     flagged_count = 0
-
     for t in transactions:
         debit_key = (t.amount, t.transaction_type, t.description[:20])
         if t.amount > 0 and t.transaction_type == "Debit":
@@ -332,7 +359,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
             else:
                 seen_debits[debit_key] = True
 
-        # Section 269ST / 40A(3) / AML Scrutiny
         if "cash" in t.category.lower() and t.amount >= 10000.0:
             t.is_suspicious = True
             t.compliance_tag = "Sec 269ST / 40A(3)"
@@ -353,7 +379,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
     reconciled = (abs(round((opening_bal + total_credits - total_debits), 2) - round(closing_bal, 2)) < 1.0) if opening_bal else True
     rec_status = "100% Mathematically Reconciled" if reconciled else "Audit Reconciled (Active Settlement Drift)"
 
-    # Gemini Summary Generation
     header_snippet = clean_ascii(combined_header[:1800])
     prompt = (
         f"Universal statement audited.\n"
@@ -402,45 +427,11 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
     elements = []
     styles = getSampleStyleSheet()
 
-    brand_title_style = ParagraphStyle(
-        'BrandTitle',
-        parent=styles['Heading1'],
-        fontSize=18,
-        leading=22,
-        textColor=colors.HexColor('#0F172A'),
-        spaceAfter=2
-    )
-    brand_tagline_style = ParagraphStyle(
-        'BrandTagline',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor('#2563EB'),
-        fontName="Helvetica-Bold",
-        spaceAfter=6
-    )
-    report_subtitle_style = ParagraphStyle(
-        'ReportSubtitle',
-        parent=styles['Normal'],
-        fontSize=9,
-        leading=13,
-        textColor=colors.HexColor('#475569'),
-        spaceAfter=8
-    )
-    body_style = ParagraphStyle(
-        'DocBody',
-        parent=styles['Normal'],
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor('#334155')
-    )
-    table_cell = ParagraphStyle(
-        'TableCell',
-        parent=styles['Normal'],
-        fontSize=7.5,
-        leading=9.5,
-        textColor=colors.HexColor('#0F172A')
-    )
+    brand_title_style = ParagraphStyle('BrandTitle', parent=styles['Heading1'], fontSize=18, leading=22, textColor=colors.HexColor('#0F172A'), spaceAfter=2)
+    brand_tagline_style = ParagraphStyle('BrandTagline', parent=styles['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#2563EB'), fontName="Helvetica-Bold", spaceAfter=6)
+    report_subtitle_style = ParagraphStyle('ReportSubtitle', parent=styles['Normal'], fontSize=9, leading=13, textColor=colors.HexColor('#475569'), spaceAfter=8)
+    body_style = ParagraphStyle('DocBody', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#334155'))
+    table_cell = ParagraphStyle('TableCell', parent=styles['Normal'], fontSize=7.5, leading=9.5, textColor=colors.HexColor('#0F172A'))
 
     elements.append(Paragraph("<b>KSP Consulting and Solutions</b>", brand_title_style))
     elements.append(Paragraph("<i>Complexity Simplified and Strategy Amplified</i>", brand_tagline_style))
@@ -514,21 +505,11 @@ def generate_audit_pdf(report: StatementAuditReport) -> bytes:
 
     ledger_table.setStyle(TableStyle(table_styles))
     elements.append(ledger_table)
-
     doc.build(elements)
     return buffer.getvalue()
 
 def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Bank Account") -> str:
-    """
-    Generates a 100% schema-compliant Tally Prime XML envelope.
-    Follows first-principles double-entry balance invariants:
-    - Debits (Outflows)  -> Payment Vouchers: Expense Dr (-Amt), Bank Cr (+Amt)
-    - Credits (Inflows)  -> Receipt Vouchers: Bank Dr (-Amt), Income Cr (+Amt)
-    - Dates formatted strictly as YYYYMMDD.
-    - All narration & string tokens safely XML-escaped.
-    """
     bank_ledger = saxutils.escape(str(bank_ledger_name).strip() or "Bank Account")
-
     xml_lines = [
         '<ENVELOPE>',
         '  <HEADER>',
@@ -546,10 +527,8 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
     ]
 
     for idx, t in enumerate(report.transactions, start=1):
-        # 1. Normalize Date to YYYYMMDD
         date_clean = re.sub(r'[^\d]', '', t.date)
         dt_str = "20250401"
-
         try:
             if len(date_clean) == 8:
                 d, m, y = int(date_clean[:2]), int(date_clean[2:4]), int(date_clean[4:])
@@ -568,12 +547,10 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
         except Exception:
             dt_str = "20250401"
 
-        # 2. XML Escape Narration & Category
         narration = saxutils.escape(t.description)
         category_ledger = saxutils.escape(t.category)
         amt_str = f"{t.amount:.2f}"
 
-        # 3. Voucher Classification
         if t.transaction_type == "Credit":
             vch_type = "Receipt"
             vch_xml = f"""        <TALLYMESSAGE xmlns:UDF="TallyUDF">
@@ -614,7 +591,6 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
             </ALLLEDGERENTRIES.LIST>
           </VOUCHER>
         </TALLYMESSAGE>"""
-
         xml_lines.append(vch_xml)
 
     xml_lines.extend([
@@ -623,12 +599,40 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
         '  </BODY>',
         '</ENVELOPE>'
     ])
-
     return "\n".join(xml_lines)
 
-def generate_venture_blueprint_pdf(venture_data: dict) -> bytes:
+# ------------------------------------------------------------------------------
+# MINI-AI CONSULTANT ENGINE (GEMINI-2.5-PRO)
+# ------------------------------------------------------------------------------
+def run_mini_consultant(business_query: str, region: str = "India / Telangana") -> MiniConsultantReport:
+    system_instruction = (
+        "You are an elite enterprise business consultant, CA, corporate lawyer, and venture strategist. "
+        "Analyze the user's business idea from first principles and deliver a thorough, realistic, and highly practical report. "
+        "Structure your entire assessment strictly under these 4 pillars: "
+        "1. Legal Requirements & Compliance: Entity formation, licensing, statutory tax mandates, industry-specific compliance, and intellectual property. "
+        "2. Applicable Government Schemes & Subsidies: National and regional funding schemes, tax holidays, grants, collateral-free credit, and subsidy criteria (e.g., PMEGP, CGTMSE, SISFS, MUDRA). "
+        "3. Project Blueprint & Step-by-Step Implementation Strategy: Phased launch timeline (Phase 1 to Phase 4), operational setup, and go-to-market execution. "
+        "4. Financial Forecasting: Initial CAPEX breakdown, ongoing OPEX runway, revenue model, break-even timeline, and projected ROI. "
+        "Maintain high factual density. Return valid ASCII plain text within the schema."
+    )
+
+    user_prompt = f"Target Jurisdiction: {region}\nBusiness Query & Concept: {clean_ascii(business_query)}"
+
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=MiniConsultantReport,
+            temperature=0.2,
+            system_instruction=system_instruction
+        )
+    )
+    return response.parsed
+
+def generate_ai_consultant_pdf(report: MiniConsultantReport) -> bytes:
     """
-    Generates a single-page A4 Venture Execution Blueprint & Subsidy Dossier.
+    Builds a professional 1-to-2 page executive strategic briefing in ReportLab.
     """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -642,72 +646,64 @@ def generate_venture_blueprint_pdf(venture_data: dict) -> bytes:
     elements = []
     styles = getSampleStyleSheet()
 
-    t_main = ParagraphStyle('VM1', parent=styles['Heading1'], fontSize=14, leading=17, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold')
-    t_tag = ParagraphStyle('VM2', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold', spaceAfter=4)
-    sec_head = ParagraphStyle('VH1', parent=styles['Heading2'], fontSize=9.5, leading=12, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold', spaceBefore=3, spaceAfter=2)
-    b_style = ParagraphStyle('VB1', parent=styles['Normal'], fontSize=7.2, leading=9.8, textColor=colors.HexColor('#334155'))
-    th_style = ParagraphStyle('VTH', parent=styles['Normal'], fontSize=7.5, leading=9.5, textColor=colors.white, fontName='Helvetica-Bold')
-    tc_style = ParagraphStyle('VTC', parent=styles['Normal'], fontSize=7.2, leading=9.2, textColor=colors.HexColor('#0F172A'))
+    t_main = ParagraphStyle('AM1', parent=styles['Heading1'], fontSize=15, leading=18, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold')
+    t_tag = ParagraphStyle('AM2', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold', spaceAfter=4)
+    sec_head = ParagraphStyle('AH1', parent=styles['Heading2'], fontSize=9.5, leading=12.5, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold', spaceBefore=3, spaceAfter=2)
+    b_style = ParagraphStyle('AB1', parent=styles['Normal'], fontSize=7.4, leading=10, textColor=colors.HexColor('#334155'))
+    th_style = ParagraphStyle('ATH', parent=styles['Normal'], fontSize=7.6, leading=9.8, textColor=colors.white, fontName='Helvetica-Bold')
+    tc_style = ParagraphStyle('ATC', parent=styles['Normal'], fontSize=7.3, leading=9.4, textColor=colors.HexColor('#0F172A'))
 
     # Header
     elements.append(Paragraph("KSP CONSULTING AND SOLUTIONS", t_main))
-    elements.append(Paragraph("STRATEGIC VENTURE BLUEPRINT & STATUTORY CAPITAL ROADMAP", t_tag))
+    elements.append(Paragraph("STRATEGIC VENTURE FEASIBILITY & STATUTORY REPORT", t_tag))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#2563EB'), spaceBefore=1, spaceAfter=4))
 
-    # Meta Overview
-    meta = [
-        [Paragraph(f"<b>Venture Concept:</b> {venture_data['title']}", b_style), Paragraph(f"<b>Entity Type:</b> {venture_data['entity_type']}", b_style)],
-        [Paragraph(f"<b>Sector Category:</b> {venture_data['sector']}", b_style), Paragraph(f"<b>Initial Capital Stack:</b> {venture_data['capex_range']}", b_style)]
-    ]
-    t_m = Table(meta, colWidths=[270, 270])
-    t_m.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('TOPPADDING', (0,0), (-1,-1), 1), ('BOTTOMPADDING', (0,0), (-1,-1), 1)]))
-    elements.append(t_m)
-    elements.append(Spacer(1, 3))
-    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1'), spaceBefore=1, spaceAfter=3))
-
-    # Core Value & Unit Economics
-    elements.append(Paragraph("First-Principles Economic Engine", sec_head))
-    elements.append(Paragraph(venture_data['value_engine'], b_style))
+    # Project Title & Summary
+    elements.append(Paragraph(f"<b>Project Focus:</b> {clean_ascii(report.project_title)}", sec_head))
+    elements.append(Paragraph(clean_ascii(report.executive_summary), b_style))
     elements.append(Spacer(1, 3))
 
-    # Capital Stack Matrix
-    elements.append(Paragraph("Capital Allocation & Statutory Economics", sec_head))
-    cap_rows = [
-        [Paragraph("Capital Category", th_style), Paragraph("Estimated Budget", th_style), Paragraph("Primary Deployment Purpose", th_style)],
-        [Paragraph("<b>Initial CAPEX</b>", tc_style), Paragraph(venture_data['capex_est'], tc_style), Paragraph(venture_data['capex_desc'], tc_style)],
-        [Paragraph("<b>Monthly OPEX (Runway)</b>", tc_style), Paragraph(venture_data['opex_est'], tc_style), Paragraph(venture_data['opex_desc'], tc_style)],
-        [Paragraph("<b>Target Gross Margin</b>", tc_style), Paragraph(venture_data['margin_est'], tc_style), Paragraph(venture_data['margin_desc'], tc_style)]
+    # Pillar 1: Legal & Statutory Compliance
+    elements.append(Paragraph("1. Legal Requirements & Compliance", sec_head))
+    elements.append(Paragraph(f"• <b>Corporate Vehicle:</b> {clean_ascii(report.legal_compliance.entity_structure)}", b_style))
+    elements.append(Paragraph(f"• <b>Mandatory Licenses:</b> {clean_ascii('; '.join(report.legal_compliance.mandatory_licenses))}", b_style))
+    elements.append(Paragraph(f"• <b>Tax & Statutory:</b> {clean_ascii('; '.join(report.legal_compliance.tax_statutory_mandates))}", b_style))
+    elements.append(Spacer(1, 3))
+
+    # Pillar 2: Government Schemes & Subsidies
+    elements.append(Paragraph("2. Applicable Government Schemes & Subsidies", sec_head))
+    for sch in report.government_schemes:
+        elements.append(Paragraph(f"• <b>{clean_ascii(sch.scheme_name)}:</b> {clean_ascii(sch.subsidy_benefits)} (<i>Eligibility:</i> {clean_ascii(sch.eligibility)})", b_style))
+    elements.append(Spacer(1, 3))
+
+    # Pillar 3: Project Blueprint & Phased Implementation
+    elements.append(Paragraph("3. Project Blueprint & Execution Strategy", sec_head))
+    for p in report.implementation_blueprint:
+        elements.append(Paragraph(f"• <b>{clean_ascii(p.phase_title)}:</b> {clean_ascii('; '.join(p.action_milestones))}", b_style))
+    elements.append(Spacer(1, 3))
+
+    # Pillar 4: Financial Forecasting
+    elements.append(Paragraph("4. Financial Forecasting & Unit Economics", sec_head))
+    fin_rows = [
+        [Paragraph("Initial CAPEX", th_style), Paragraph("Monthly OPEX Runway", th_style), Paragraph("Break-Even", th_style), Paragraph("Projected ROI", th_style)],
+        [
+            Paragraph(clean_ascii(report.financial_forecast.estimated_initial_capex), tc_style),
+            Paragraph(clean_ascii(report.financial_forecast.monthly_opex_runway), tc_style),
+            Paragraph(clean_ascii(report.financial_forecast.break_even_timeline), tc_style),
+            Paragraph(clean_ascii(report.financial_forecast.projected_roi), tc_style)
+        ]
     ]
-    t_cap = Table(cap_rows, colWidths=[130, 110, 300])
-    t_cap.setStyle(TableStyle([
+    t_fin = Table(fin_rows, colWidths=[130, 140, 130, 140])
+    t_fin.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
         ('TOPPADDING', (0, 0), (-1, -1), 2.5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.white),
-        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F8FAFC')),
-        ('BACKGROUND', (0, 3), (-1, 3), colors.white),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.white)
     ]))
-    elements.append(t_cap)
-    elements.append(Spacer(1, 3))
-
-    # Statutory & Legal Checklist
-    elements.append(Paragraph("Regulatory Approvals & Mandatory Compliances", sec_head))
-    for reg in venture_data['regulations']:
-        elements.append(Paragraph(f"• {reg}", b_style))
-        elements.append(Spacer(1, 1))
-    elements.append(Spacer(1, 3))
-
-    # Applicable Government Schemes
-    elements.append(Paragraph("Applicable Government Schemes & Subsidy Pathways", sec_head))
-    for sch in venture_data['schemes']:
-        elements.append(Paragraph(f"• <b>{sch['name']}:</b> {sch['detail']}", b_style))
-        elements.append(Spacer(1, 1.2))
-    elements.append(Spacer(1, 3))
-
-    # Execution Plan
-    elements.append(Paragraph("Phase-1 Execution Strategy", sec_head))
-    elements.append(Paragraph(venture_data['execution_roadmap'], b_style))
+    elements.append(t_fin)
+    elements.append(Spacer(1, 2))
+    elements.append(Paragraph(f"• <b>Revenue Strategies:</b> {clean_ascii(' | '.join(report.financial_forecast.revenue_streams))}", b_style))
 
     doc.build(elements)
     return buf.getvalue()
