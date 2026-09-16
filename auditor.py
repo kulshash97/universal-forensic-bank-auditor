@@ -6,20 +6,23 @@ import xml.sax.saxutils as saxutils
 from datetime import datetime
 from typing import List, Optional
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 import pypdf
 import streamlit as st
 
-# ReportLab imports for executive compliance reporting
+# ReportLab imports for executive compliance reporting & venture blueprints
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-
-load_dotenv()
 
 # Safe API key retrieval from environment or Streamlit Secrets
 raw_api_key = os.getenv("GEMINI_API_KEY")
@@ -269,7 +272,6 @@ def analyze_statement(file_bytes: bytes, mime_type: str, password: Optional[str]
                     amt_line = l
                     break
 
-            # Strictly match standalone currency tokens (avoids alphanumeric strings like 'santhosh07.318')
             nums = re.findall(r'(?:^|\s)([\d,]+\.\d{2})(?=\s|$|\()', amt_line)
             if len(nums) < 2:
                 nums = re.findall(r'[\d,]+\.\d{2}', amt_line)
@@ -623,3 +625,89 @@ def generate_tally_xml(report: StatementAuditReport, bank_ledger_name: str = "Ba
     ])
 
     return "\n".join(xml_lines)
+
+def generate_venture_blueprint_pdf(venture_data: dict) -> bytes:
+    """
+    Generates a single-page A4 Venture Execution Blueprint & Subsidy Dossier.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        rightMargin=26,
+        leftMargin=26,
+        topMargin=22,
+        bottomMargin=22
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
+    t_main = ParagraphStyle('VM1', parent=styles['Heading1'], fontSize=14, leading=17, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold')
+    t_tag = ParagraphStyle('VM2', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#2563EB'), fontName='Helvetica-Bold', spaceAfter=4)
+    sec_head = ParagraphStyle('VH1', parent=styles['Heading2'], fontSize=9.5, leading=12, textColor=colors.HexColor('#0F172A'), fontName='Helvetica-Bold', spaceBefore=3, spaceAfter=2)
+    b_style = ParagraphStyle('VB1', parent=styles['Normal'], fontSize=7.2, leading=9.8, textColor=colors.HexColor('#334155'))
+    th_style = ParagraphStyle('VTH', parent=styles['Normal'], fontSize=7.5, leading=9.5, textColor=colors.white, fontName='Helvetica-Bold')
+    tc_style = ParagraphStyle('VTC', parent=styles['Normal'], fontSize=7.2, leading=9.2, textColor=colors.HexColor('#0F172A'))
+
+    # Header
+    elements.append(Paragraph("KSP CONSULTING AND SOLUTIONS", t_main))
+    elements.append(Paragraph("STRATEGIC VENTURE BLUEPRINT & STATUTORY CAPITAL ROADMAP", t_tag))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#2563EB'), spaceBefore=1, spaceAfter=4))
+
+    # Meta Overview
+    meta = [
+        [Paragraph(f"<b>Venture Concept:</b> {venture_data['title']}", b_style), Paragraph(f"<b>Entity Type:</b> {venture_data['entity_type']}", b_style)],
+        [Paragraph(f"<b>Sector Category:</b> {venture_data['sector']}", b_style), Paragraph(f"<b>Initial Capital Stack:</b> {venture_data['capex_range']}", b_style)]
+    ]
+    t_m = Table(meta, colWidths=[270, 270])
+    t_m.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('TOPPADDING', (0,0), (-1,-1), 1), ('BOTTOMPADDING', (0,0), (-1,-1), 1)]))
+    elements.append(t_m)
+    elements.append(Spacer(1, 3))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1'), spaceBefore=1, spaceAfter=3))
+
+    # Core Value & Unit Economics
+    elements.append(Paragraph("First-Principles Economic Engine", sec_head))
+    elements.append(Paragraph(venture_data['value_engine'], b_style))
+    elements.append(Spacer(1, 3))
+
+    # Capital Stack Matrix
+    elements.append(Paragraph("Capital Allocation & Statutory Economics", sec_head))
+    cap_rows = [
+        [Paragraph("Capital Category", th_style), Paragraph("Estimated Budget", th_style), Paragraph("Primary Deployment Purpose", th_style)],
+        [Paragraph("<b>Initial CAPEX</b>", tc_style), Paragraph(venture_data['capex_est'], tc_style), Paragraph(venture_data['capex_desc'], tc_style)],
+        [Paragraph("<b>Monthly OPEX (Runway)</b>", tc_style), Paragraph(venture_data['opex_est'], tc_style), Paragraph(venture_data['opex_desc'], tc_style)],
+        [Paragraph("<b>Target Gross Margin</b>", tc_style), Paragraph(venture_data['margin_est'], tc_style), Paragraph(venture_data['margin_desc'], tc_style)]
+    ]
+    t_cap = Table(cap_rows, colWidths=[130, 110, 300])
+    t_cap.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
+        ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.white),
+        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F8FAFC')),
+        ('BACKGROUND', (0, 3), (-1, 3), colors.white),
+    ]))
+    elements.append(t_cap)
+    elements.append(Spacer(1, 3))
+
+    # Statutory & Legal Checklist
+    elements.append(Paragraph("Regulatory Approvals & Mandatory Compliances", sec_head))
+    for reg in venture_data['regulations']:
+        elements.append(Paragraph(f"• {reg}", b_style))
+        elements.append(Spacer(1, 1))
+    elements.append(Spacer(1, 3))
+
+    # Applicable Government Schemes
+    elements.append(Paragraph("Applicable Government Schemes & Subsidy Pathways", sec_head))
+    for sch in venture_data['schemes']:
+        elements.append(Paragraph(f"• <b>{sch['name']}:</b> {sch['detail']}", b_style))
+        elements.append(Spacer(1, 1.2))
+    elements.append(Spacer(1, 3))
+
+    # Execution Plan
+    elements.append(Paragraph("Phase-1 Execution Strategy", sec_head))
+    elements.append(Paragraph(venture_data['execution_roadmap'], b_style))
+
+    doc.build(elements)
+    return buf.getvalue()

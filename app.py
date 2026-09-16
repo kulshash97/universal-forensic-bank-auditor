@@ -2,7 +2,12 @@ import streamlit as st
 import pandas as pd
 import io
 import re
-from auditor import analyze_statement, generate_audit_pdf, generate_tally_xml
+from auditor import (
+    analyze_statement,
+    generate_audit_pdf,
+    generate_tally_xml,
+    generate_venture_blueprint_pdf
+)
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -17,14 +22,15 @@ st.set_page_config(
 # Header with KSP Consulting and Solutions Branding
 st.title("💼 KSP Consulting and Solutions")
 st.markdown("##### *Complexity Simplified and Strategy Amplified*")
-st.caption("Universal Multi-Bank Forensic Statement Auditor, Regulatory Onboarding & Document Verification Suite")
+st.caption("Universal Multi-Bank Forensic Statement Auditor, Regulatory Onboarding, Document Verification & Venture Suite")
 
 # Unified Multi-Tab Setup
-tab_audit, tab_onboard, tab_validator, tab_pitch = st.tabs([
+tab_audit, tab_onboard, tab_validator, tab_pitch, tab_startup = st.tabs([
     "📊 Universal Bank Statement Auditor",
     "🔍 Intent-Driven Onboarding",
     "📁 First-Principles Document Validator",
-    "📈 Creditworthiness & Firm Pitch Dashboard"
+    "📈 Creditworthiness & Firm Pitch Dashboard",
+    "🚀 Startup Intelligence & Capital Schemes"
 ])
 
 # ==============================================================================
@@ -501,6 +507,191 @@ with tab_pitch:
         label="📥 Download Official KSP Commercial Retainer Proposal (.PDF)",
         data=proposal_pdf_bytes,
         file_name="KSP_Commercial_Proposal.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=True
+    )
+
+
+# ==============================================================================
+# TAB 5: STARTUP INTELLIGENCE & CAPITAL SCHEMES (FIRST-PRINCIPLES VENTURE DESK)
+# ==============================================================================
+with tab_startup:
+    st.subheader("🚀 First-Principles Venture Discovery & Statutory Capitalizer")
+    st.write("Source high-ROI business models, statutory licenses, unit economics, and 2026 Government schemes (PMEGP, CGTMSE, SISFS).")
+
+    VENTURES = {
+        "saas_fintech": {
+            "title": "Autonomous Financial Compliance & Micro-Forensic B2B Desk",
+            "sector": "FinTech / LegalTech SaaS",
+            "entity_type": "Private Limited / LLP (Eligible for DPIIT Recognition)",
+            "capex_range": "Rs. 25,000 - Rs. 1,00,000 (Asset-Light)",
+            "value_engine": "Capitalizes on statutory compliance bottlenecks (Income Tax Form 3CD, GST 2B reconciliation) using local compute engines to eliminate human manual data-entry overhead. High retention with ~95% operating margin.",
+            "capex_est": "Rs. 30,000 - 50,000",
+            "capex_desc": "Cloud hosting (Streamlit/AWS), domain, SSL, Class-3 DSC, incorporation filing.",
+            "opex_est": "Rs. 2,000 - 5,000/mo",
+            "opex_desc": "LLM API inference compute, database storage, internet, zero article overhead.",
+            "margin_est": "90% - 95%",
+            "margin_desc": "Zero manufacturing COGS; service arbitrage delivered via automated backend.",
+            "regulations": [
+                "<b>Corporate Incorporation:</b> SPICe+ (Part A & B) via MCA-21 Portal for Pvt Ltd or FiLLiP for LLP.",
+                "<b>Tax Registrations:</b> Professional Tax (PTEC/PTRC), GST Registration (Form GST REG-01), Corporate PAN/TAN.",
+                "<b>Startup Recognition:</b> DPIIT Recognition under Startup India for Section 56(2)(viib) and Section 80-IAC tax exemptions.",
+                "<b>IP Protection:</b> Trademark registration under Class 9 & Class 42 for proprietary audit software code."
+            ],
+            "schemes": [
+                {
+                    "name": "Startup India Seed Fund Scheme (SISFS)",
+                    "detail": "Grants up to Rs. 20 Lakhs for proof-of-concept/prototype validation, or up to Rs. 50 Lakhs via convertible debentures/debt for commercialization through approved incubators."
+                },
+                {
+                    "name": "CGTMSE Collateral-Free Credit",
+                    "detail": "Enables collateral-free working capital and term loans from scheduled banks up to Rs. 10 Crores (guarantee ceiling raised to Rs. 10 Cr w.e.f. 2025/2026)."
+                }
+            ],
+            "execution_roadmap": "1. Deploy Streamlit/Python core; 2. Complete 5 free pilot audits for local CA firms to lock proof-of-work; 3. Convert 8 firms to Rs. 10,000/mo retainers; 4. Apply for DPIIT recognition via Startup India portal."
+        },
+        "pet_treats": {
+            "title": "Functional Cat & Dog Nutrition Brand (Single-Ingredient Treats)",
+            "sector": "Pet Care FMCG / Consumer Manufacturing",
+            "entity_type": "Private Limited / Sole Proprietorship (PMEGP Eligible)",
+            "capex_range": "Rs. 5,00,000 - Rs. 15,00,000",
+            "value_engine": "Captures the rapid premiumization in the Indian pet care market by manufacturing clean-label, dehydrated single-ingredient animal protein treats at 60% gross product margin.",
+            "capex_est": "Rs. 4,00,000 - 8,00,000",
+            "capex_desc": "Commercial food dehydrators, nitrogen vacuum heat-sealers, packaging dies.",
+            "opex_est": "Rs. 40,000 - 75,000/mo",
+            "opex_desc": "Raw protein sourcing, high-barrier pouch printing, factory lease, courier logistics.",
+            "margin_est": "55% - 65%",
+            "margin_desc": "Cost of raw meat Rs. 250/kg yields Rs. 1,200/kg retail treat packets.",
+            "regulations": [
+                "<b>FSSAI / Animal Husbandry:</b> Animal feed manufacturing registration, state veterinary trade NOC.",
+                "<b>Factory & Labour:</b> Local Municipal Trade License, Shops & Establishments registration.",
+                "<b>Environmental Clearance:</b> State Pollution Control Board (SPCB) Green/White category consent.",
+                "<b>Packaging Compliance:</b> Legal Metrology (Packaged Commodities) Rules declaration on labels."
+            ],
+            "schemes": [
+                {
+                    "name": "PMEGP (Prime Minister Employment Generation Programme)",
+                    "detail": "15% to 35% margin money subsidy on project costs up to Rs. 50 Lakhs for manufacturing units. Beneficiary contribution is just 5% to 10%."
+                },
+                {
+                    "name": "PM Mudra Yojana (Tarun / Tarun Plus)",
+                    "detail": "Sanctions term loans from Rs. 10 Lakhs up to Rs. 20 Lakhs for machinery purchases without requiring third-party collateral."
+                }
+            ],
+            "execution_roadmap": "1. Secure commercial dehydrator and food-grade packaging; 2. Test recipe stability; 3. Onboard 15 local vet clinics and pet stores on consignment; 4. File PMEGP subsidy through KVIC portal."
+        },
+        "luxury_villa": {
+            "title": "Agro-Tourism Farmhouse & Weekend Luxury Rental Villa",
+            "sector": "Hospitality / Experiential Real Estate",
+            "entity_type": "LLP / Partnership Firm",
+            "capex_range": "Rs. 25,00,000 - Rs. 60,00,000",
+            "value_engine": "Generates 25-35% cash-on-cash yield by developing an experiential private villa on agricultural/suburban land, catering to high-income city weekend retreats.",
+            "capex_est": "Rs. 20,00,000 - 45,00,000",
+            "capex_desc": "Prefab/sustainable villa construction, plunge pool, solar power grid, landscaping.",
+            "opex_est": "Rs. 30,00,000 - 50,000/mo",
+            "opex_desc": "Caretaker/housekeeping salary, pool chemicals, utility electricity, booking commissions.",
+            "margin_est": "60% - 75%",
+            "margin_desc": "Average weekend rental of Rs. 15,000 - 25,000/night yields Rs. 1.5 - 2.5 Lakhs monthly net cashflow.",
+            "regulations": [
+                "<b>Land Clearance:</b> Non-Agricultural Land Permission (NALA conversion) or Agro-tourism resort zoning.",
+                "<b>Local Panchayati / Municipal NOC:</b> Gram Panchayat building plan approval and fire safety clearance.",
+                "<b>Hospitality Registration:</b> State Tourism Department accreditation, Police Station Sarai Act registration.",
+                "<b>Taxation:</b> GST registration under Hospitality tariff rules (exempt below threshold, 12% above)."
+            ],
+            "schemes": [
+                {
+                    "name": "State Tourism Policy Incentives",
+                    "detail": "Capital investment subsidies (up to 20%), reimbursement of stamp duty on lease/purchase, and concessional power tariffs for registered tourism units."
+                },
+                {
+                    "name": "PMEGP (Service Sector)",
+                    "detail": "Subsidy of 15% to 35% on project costs up to Rs. 20 Lakhs for rural/semi-urban hospitality and service infrastructure."
+                }
+            ],
+            "execution_roadmap": "1. Validate land title and boundary fencing; 2. Construct sustainable 2-bedroom pool villa; 3. List on Airbnb, MakeMyTrip, and Instagram; 4. Partner with corporate offsite event planners."
+        },
+        "wholesale_distribution": {
+            "title": "B2B High-Volume Commodity / FMCG Distribution Hub",
+            "sector": "Supply Chain & Wholesale Trade",
+            "entity_type": "LLP / Sole Proprietorship",
+            "capex_range": "Rs. 10,00,000 - Rs. 30,00,000",
+            "value_engine": "High-velocity working capital turnover model supplying retail grocers and hotels. Operates on 8-12% net operating margins with 3-4x inventory turns every month.",
+            "capex_est": "Rs. 3,00,000 - 6,00,000",
+            "capex_desc": "Warehouse security deposit, billing software, commercial weighing infrastructure, delivery vehicle down payment.",
+            "opex_est": "Rs. 60,000 - 1,20,000/mo",
+            "opex_desc": "Commercial rent, loading labor, fuel/logistics, transit insurance.",
+            "margin_est": "8% - 14% (High ROI via rapid velocity)",
+            "margin_desc": "Rs. 20 Lakhs inventory rotated 3 times monthly yields Rs. 60 Lakhs monthly gross volume.",
+            "regulations": [
+                "<b>GST Registration:</b> Mandatory for inter-state supply or turnover > Rs. 40 Lakhs.",
+                "<b>E-Way Bill System:</b> Automated portal credentials for consignment movements > Rs. 50,000.",
+                "<b>Section 269ST & 40A(3) Compliance:</b> Strict banking channel settlement (zero cash above statutory limits).",
+                "<b>Warehouse Registration:</b> Municipal trade license and commercial fire insurance."
+            ],
+            "schemes": [
+                {
+                    "name": "CGTMSE Cash Credit (Working Capital Limit)",
+                    "detail": "Provides collateral-free CC/OD banking facilities up to Rs. 10 Crores based on GST turnover verification."
+                },
+                {
+                    "name": "Stand-Up India Scheme",
+                    "detail": "Bank loans between Rs. 10 Lakhs and Rs. 1 Crore for greenfield trading or service enterprises (applicable for SC/ST or Women entrepreneurs)."
+                }
+            ],
+            "execution_roadmap": "1. Finalize warehouse space near highway logistics corridor; 2. Secure authorized distributorship from primary manufacturer; 3. Map retail grocery accounts in a 10 km radius; 4. Set up daily banking reconciliation."
+        }
+    }
+
+    selected_venture_key = st.selectbox(
+        "Select Venture Model to Blueprint:",
+        options=list(VENTURES.keys()),
+        format_func=lambda x: VENTURES[x]["title"]
+    )
+    v = VENTURES[selected_venture_key]
+
+    # Metrics Strip
+    col_v1, col_v2, col_v3 = st.columns(3)
+    col_v1.metric("Recommended Structure", v["entity_type"].split("/")[0].strip())
+    col_v2.metric("Target Gross Margin", v["margin_est"])
+    col_v3.metric("Initial Capital Stack", v["capex_range"])
+
+    # Detailed Blueprint Display
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.markdown("#### ⚙️ First-Principles Economic Engine")
+        st.info(v["value_engine"])
+
+        st.markdown("#### 💼 Regulatory Approvals & Legal Setup")
+        for reg in v["regulations"]:
+            st.markdown(f"• {reg}", unsafe_allow_html=True)
+
+    with col_right:
+        st.markdown("#### 🏛️ Applicable Government Schemes & Subsidies (2026)")
+        for sch in v["schemes"]:
+            st.success(f"**{sch['name']}**: {sch['detail']}")
+
+        st.markdown("#### 📈 Unit Economics & Budget Breakdown")
+        st.write(f"• **Initial CAPEX:** {v['capex_est']} ({v['capex_desc']})")
+        st.write(f"• **Monthly OPEX:** {v['opex_est']} ({v['opex_desc']})")
+        st.write(f"• **Operating Margin:** {v['margin_desc']}")
+
+    st.markdown("---")
+    st.markdown("#### 🎯 Execution Roadmap")
+    st.markdown(f"> *{v['execution_roadmap']}*")
+
+    # Downloadable PDF Action
+    st.markdown("### 📑 Export Professional Venture Blueprint")
+    st.write("Generate a branded, institutional 1-page investment & regulatory brief for founders, banks, or grant committees.")
+
+    blueprint_pdf_bytes = generate_venture_blueprint_pdf(v)
+    safe_v_name = re.sub(r'[^a-zA-Z0-9]', '_', v['title'][:30])
+
+    st.download_button(
+        label="📥 Download Executive Venture Blueprint (.PDF)",
+        data=blueprint_pdf_bytes,
+        file_name=f"KSP_Venture_Blueprint_{safe_v_name}.pdf",
         mime="application/pdf",
         type="primary",
         use_container_width=True
